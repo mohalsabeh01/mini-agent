@@ -1,4 +1,5 @@
 
+import json
 import os
 
 from dotenv import load_dotenv
@@ -16,16 +17,24 @@ client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
 )
 
-MODEL = "llama-3.3-70b-versatile"
+MODEL = "openai/gpt-oss-120b"
 
 SYSTEM_PROMPT = """
 Du bist ein hilfreicher Assistent für eine kleine Bibliothek in Hamburg.
 
-Du kannst Bücher suchen und den Rückgabetermin einer Ausleihe prüfen.
-Erfinde keine Informationen.
-Wenn die Ausleihnummer fehlt, frage nach ihr.
-Nenne keine Preise oder Telefonnummern.
+Regeln:
+- Bei Fragen zu Büchern musst du immer zuerst das Tool search_book verwenden.
+- Verwende für Buchinformationen ausschließlich die Ergebnisse des Tools.
+- Wenn das Tool "Buch nicht gefunden." zurückgibt, sage dem Nutzer,
+  dass das Buch nicht im Bibliothekskatalog gefunden wurde.
+- Verwende niemals dein eigenes Wissen, um fehlende Buchinformationen
+  zu ergänzen.
+- Bei Fragen zum Rückgabetermin musst du get_loan_status verwenden.
+- Wenn die Ausleihnummer fehlt, frage nach ihr.
+- Erfinde keine Informationen.
+- Nenne keine Preise oder Telefonnummern.
 """
+
 
 def execute_tool(name, arguments):
     if name == "search_book":
@@ -35,3 +44,71 @@ def execute_tool(name, arguments):
         return get_loan_status(arguments["loan_id"])
 
     return "Unbekanntes Tool."
+
+
+def run_agent(user_input, history):
+    history.append({
+        "role": "user",
+        "content": user_input,
+    })
+
+    while True:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                *history,
+            ],
+            tools=TOOLS,
+            tool_choice="auto",
+        )
+
+        message = response.choices[0].message
+
+        if not message.tool_calls:
+            answer = message.content or ""
+            history.append({
+                "role": "assistant",
+                "content": answer,
+            })
+            return answer
+
+        history.append(message.model_dump(exclude_none=True))
+
+        for tool_call in message.tool_calls:
+            name = tool_call.function.name
+            arguments = json.loads(tool_call.function.arguments)
+
+            result = execute_tool(name, arguments)
+
+            history.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": str(result),
+            })
+
+
+def main():
+    history = []
+
+    print("Bibliotheks-Agent gestartet. Mit 'exit' beenden.")
+
+    while True:
+        user_input = input("\nDu: ").strip()
+
+        if user_input.lower() == "exit":
+            print("Auf Wiedersehen!")
+            break
+
+        if not user_input:
+            continue
+
+        try:
+            answer = run_agent(user_input, history)
+            print(f"Agent: {answer}")
+        except Exception as error:
+            print(f"Fehler: {error}")
+
+
+if __name__ == "__main__":
+    main()
