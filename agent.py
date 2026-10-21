@@ -47,6 +47,10 @@ def execute_tool(name, arguments):
 
 
 
+
+MAX_ROUNDS = 10
+
+
 def run_agent(user_input, history):
     history_length = len(history)
 
@@ -56,7 +60,7 @@ def run_agent(user_input, history):
             "content": user_input,
         })
 
-        while True:
+        for round_number in range(MAX_ROUNDS):
             response = client.chat.completions.create(
                 model=MODEL,
                 messages=[
@@ -91,9 +95,14 @@ def run_agent(user_input, history):
                     "content": str(result),
                 })
 
+        raise RuntimeError(
+            f"Agent hat das Limit von {MAX_ROUNDS} Runden erreicht."
+        )
+
     except Exception:
         del history[history_length:]
         raise
+
 
 
 def main():
