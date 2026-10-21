@@ -46,46 +46,54 @@ def execute_tool(name, arguments):
     return "Unbekanntes Tool."
 
 
+
 def run_agent(user_input, history):
-    history.append({
-        "role": "user",
-        "content": user_input,
-    })
+    history_length = len(history)
 
-    while True:
-        response = client.chat.completions.create(
-            model=MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                *history,
-            ],
-            tools=TOOLS,
-            tool_choice="auto",
-        )
+    try:
+        history.append({
+            "role": "user",
+            "content": user_input,
+        })
 
-        message = response.choices[0].message
+        while True:
+            response = client.chat.completions.create(
+                model=MODEL,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    *history,
+                ],
+                tools=TOOLS,
+                tool_choice="auto",
+            )
 
-        if not message.tool_calls:
-            answer = message.content or ""
-            history.append({
-                "role": "assistant",
-                "content": answer,
-            })
-            return answer
+            message = response.choices[0].message
 
-        history.append(message.model_dump(exclude_none=True))
+            if not message.tool_calls:
+                answer = message.content or ""
+                history.append({
+                    "role": "assistant",
+                    "content": answer,
+                })
+                return answer
 
-        for tool_call in message.tool_calls:
-            name = tool_call.function.name
-            arguments = json.loads(tool_call.function.arguments)
+            history.append(message.model_dump(exclude_none=True))
 
-            result = execute_tool(name, arguments)
+            for tool_call in message.tool_calls:
+                name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
 
-            history.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": str(result),
-            })
+                result = execute_tool(name, arguments)
+
+                history.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": str(result),
+                })
+
+    except Exception:
+        del history[history_length:]
+        raise
 
 
 def main():
